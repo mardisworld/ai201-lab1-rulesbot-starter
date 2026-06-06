@@ -24,47 +24,95 @@ def chunk_document(text, game_name):
     """
     Split a rule document into chunks ready for embedding.
 
-    This function is already implemented — read through it and the inline
-    comments before moving on. The decisions made here directly shape what
-    retrieval returns in Milestones 2 and 3, so it's worth understanding
-    before you build on top of it.
+    Strategy: section-based chunking with game/heading enrichment.
 
-    Strategy: character-based sliding window with overlap.
-      - chunk_size = 300 characters: long enough to carry the semantic
-        meaning of a single rule, short enough to return targeted results
-      - overlap = 50 characters: duplicates a small window of text at each
-        boundary so a rule that spans two chunks can still be retrieved intact
-      - min_length = 50 characters: filters out whitespace artifacts and
-        very short fragments that add noise without useful semantic content
+    The rule documents are written as sections — an ALL-CAPS heading line
+    (e.g. "ROLLING A 7", "BUILDING") followed by one or more body paragraphs,
+    until the next heading. A section is the natural semantic unit, so we cut
+    on heading boundaries rather than at fixed character counts. This keeps a
+    rule intact with its heading and on a single topic, which gives each chunk
+    enough focused semantic signal to embed close to a matching question (e.g.
+    the whole "ROLLING A 7" robber rule becomes one chunk) and far from
+    unrelated rules in other games.
+
+      - A new chunk starts at each ALL-CAPS heading line; the heading and all
+        following body lines, up to the next heading, form one chunk.
+      - min_length = 50: a section shorter than this (e.g. a lone title line)
+        is merged forward into the next one rather than emitted as a noisy
+        fragment.
+      - Enrichment: each chunk's text is prefixed with "{game} — {heading}".
+        Without this, only the OVERVIEW chunk contained the game name, so any
+        query naming the game ("...in Pandemic") was pulled toward that generic
+        overview, often outranking the section that actually answered it. With
+        the name in *every* chunk the game stops being a discriminator, so the
+        topic decides the ranking — this measurably lowered distances and
+        pushed the overview out of the top results in testing.
 
     Returns a list of dicts, each with:
-      - "text"     : the chunk text (str)
+      - "text"     : the chunk text (str), prefixed with "{game} — {heading}"
       - "game"     : the game name, e.g. "Catan" (str)
       - "chunk_id" : a unique identifier, e.g. "catan_0", "catan_1" (str)
     """
-    chunk_size = 300
-    overlap = 50
     min_length = 50
+
+    def is_heading(line):
+        # Headings are short, all-caps lines (allowing digits/punctuation),
+        # e.g. "ROLLING A 7" or "DEVELOPMENT CARDS".
+        stripped = line.strip()
+        return bool(stripped) and stripped.isupper() and len(stripped) < 50
+
+    # Group lines into sections, breaking each time a heading line is seen.
+    sections = []
+    current = []
+    for line in text.splitlines():
+        # Skip the boilerplate document title (e.g. "RISK — OFFICIAL RULES
+        # SUMMARY"). It carries no rule content, only duplicate game-name
+        # signal that would turn the OVERVIEW chunk into a magnet for any
+        # query naming the game.
+        if "OFFICIAL RULES SUMMARY" in line.upper():
+            continue
+        if is_heading(line) and current:
+            sections.append("\n".join(current).strip())
+            current = []
+        current.append(line)
+    if current:
+        sections.append("\n".join(current).strip())
 
     chunks = []
     prefix = game_name.lower().replace(" ", "_")
     counter = 0
 
-    start = 0
-    while start < len(text):
-        end = start + chunk_size
-        chunk_text = text[start:end].strip()
+    def enrich(section):
+        # Prefix the chunk with "{game} — {heading}" so every chunk carries
+        # the game name and its topic heading (see docstring).
+        heading = section.splitlines()[0].strip()
+        return f"{game_name} — {heading}\n{section}"
 
-        if len(chunk_text) >= min_length:
+    # A section shorter than min_length is carried forward and prepended to
+    # the next section so short headers/titles ride along with real content.
+    carry = ""
+    for section in sections:
+        section = (carry + "\n\n" + section).strip() if carry else section
+        if len(section) < min_length:
+            carry = section
+            continue
+        carry = ""
+        chunks.append({
+            "text": enrich(section),
+            "game": game_name,
+            "chunk_id": f"{prefix}_{counter}",
+        })
+        counter += 1
+
+    # If a trailing short section is still buffered, append it to the last
+    # chunk (or emit it alone if there is no previous chunk).
+    if carry:
+        if chunks:
+            chunks[-1]["text"] += "\n\n" + carry
+        else:
             chunks.append({
-                "text": chunk_text,
+                "text": enrich(carry),
                 "game": game_name,
                 "chunk_id": f"{prefix}_{counter}",
             })
-            counter += 1
-
-        # Advance by (chunk_size - overlap) so the next chunk shares
-        # `overlap` characters with the tail of this one.
-        start += chunk_size - overlap
-
     return chunks
