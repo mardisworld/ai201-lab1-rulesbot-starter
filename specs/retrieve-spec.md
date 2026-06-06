@@ -179,5 +179,5 @@ The root cause is in ingest.py:56 — the character-based chunker (text[start:en
 **One thing about the query results that surprised you:**
 
 ```
-[your answer here]
+I was surprised that Catan's distance score was 0.466, but still gave the correct answer. 
 ```
