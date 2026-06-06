@@ -28,8 +28,19 @@ def run_ingestion():
     all_chunks = []
 
     for doc in documents:
+        # chunk_document(...) returns a list of chunk dicts for one game 
         chunks = chunk_document(doc["text"], doc["game"])
+        # all_chunks.extend(chunks) takes every item out of that list and appends them individually to all_chunks, building one combined list across all games.
         all_chunks.extend(chunks)
+
+    # Dev Note:  .extend() vs .append() — the key distinction
+    #
+    #.extend(chunks) unpacks the list and adds each element separately:
+    # all_chunks = [catan_0, catan_1, monopoly_0]   # flat list of chunks ✅
+    #   
+    # .append(chunks) would instead add the whole list as a single nested item:
+    # all_chunks = [[catan_0, catan_1], [monopoly_0]]  # list of lists ❌
+    # 
 
     if all_chunks:
         embed_and_store(all_chunks)

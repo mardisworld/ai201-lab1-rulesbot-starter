@@ -116,11 +116,11 @@ handle these cases better, at the cost of more implementation complexity.
 **Actual chunk count produced across all 8 rule books:**
 
 ```
-[your answer here]
+149
 ```
 
 **One thing that surprised you or didn't match your expectations:**
 
 ```
-[your answer here]
+I don't have enough information to be surprised by the results. 149 chunks of 300 characters for 8 games seems reasonable, but it depends on the game and its complexity. 
 ```

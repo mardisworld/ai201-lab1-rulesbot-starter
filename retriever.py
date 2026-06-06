@@ -68,5 +68,25 @@ def retrieve(query, n_results=N_RESULTS):
     if _collection.count() == 0:
         return []
 
-    # Your implementation here.
-    return []
+    # query_texts is a list because query() supports batched queries; ChromaDB
+    # embeds the text with the same embedding function used at ingestion time,
+    # putting the question and the stored chunks in one comparable vector space.
+    results = _collection.query(
+        query_texts=[query],
+        n_results=n_results,
+        include=["documents", "metadatas", "distances"],
+    )
+
+    # query() returns doubly-nested lists shaped as results[key][query][result].
+    # We sent a single query, so all our results live at index [0]. These three
+    # inner lists are index-aligned and already sorted lowest-distance first.
+    documents = results["documents"][0]
+    metadatas = results["metadatas"][0]
+    distances = results["distances"][0]
+
+    # Return all n_results regardless of distance — no hard threshold. The
+    # distance scores travel with each chunk so the caller can judge relevance.
+    return [
+        {"text": doc, "game": meta["game"], "distance": dist}
+        for doc, meta, dist in zip(documents, metadatas, distances)
+    ]
